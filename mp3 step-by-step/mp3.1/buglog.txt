@@ -1,0 +1,46 @@
+Buglog
+
+Group #: 27
+
+MP 3.1
+
+1. 
+Location:
+	student-distrib/i8259.c: i8259_init()
+Bug Description:
+	The program can not process a loop longer than some threshold. If such a loop happens, there will be "Watchdog has expired" error.
+DeBug:
+	We gradually comment the initialize code, and when we comment the i8259_init() the bug is solved.
+	The problem is that we diden't mask all the interrupts using the master/slave_mask.
+	To solve it, add:
+		master_mask = 0xFF;
+		slave_mask = 0xFF;
+
+2.
+Location:
+	student-distrib/keyboard.c: keyboard_handler()
+Bug Description:
+	When press a key and then release it on the keyboard, instead of output the key, it will output the key together with another character.
+DeBug:
+	We analysised the output of the keyboard and find that only when we release the key will it output an unwanted character. And then we realized that a signal will also be passed when we release a key. Thus, we checked the scancode table carefully and found that the difference between the press signal and the release signal is 0x80. Then the solution is obvious.
+	To solve it, add:
+		if(scancode > NUM_VEC) break;
+
+3.
+Location:
+	student-distrib
+Bug Description:
+	After adding asm_linkage.h, the project fail to make because of multiple definition of some variables
+DeBug:
+	A tricky bug. We find the problem by checking the dependence relations between each file. The problem is solved by moving some definitions in 
+	keyboard.h to keyboard.c.
+
+4.
+Location:
+	student-distrib/tests.c
+Bug Description:
+	After adding the rtc_test function and rtc_switch, we found that the rtc fails to display correctly. It shows nothing when rtc_test() is called.
+DeBug:
+	We check how clear() and printf() work in lib.c. The problem falls on that when we call clear() to clean the screen, the cursor is not put into the start
+	of the screen. The bug is solved by adding set_cursor(0,0) after clear().
+
