@@ -1,0 +1,134 @@
+Bug Log for MP2
+Name: Zitai Kong
+NetID: zitaik2
+
+Checkpoint 1
+
+1. 
+Place: 
+	modex.c: int draw_vert_line(int x);
+Bug Description:
+	When the console scrolls to the right side, something wierd was printed instead of a complete wall.
+Debug:
+	The bug was caused by the wrong address assignment of draw_verticle_line.
+	The original code was addr[p_off * SCROLL_SIZE + i] = buf[i];
+	But in this way the objects put into the build buffer is not the whole vertical line, but the first few rows of each vertical line. So I change it into correct index, i.e:
+	addr[p_off * SCROLL_SIZE + i * SCROLL_X_WIDTH] = buf[i];
+	This way keeps track of the single vertical lines.
+
+2.
+Place:
+	modex.c: static unsigned short mode_X_CRTC[NUM_CRTC_REGS]
+Bug Description:
+	The screen/status bar was cutted in at the middle of the console, instead of the bottom.
+Debug:
+	The first thought of mine was to put 182 directly into the 9', 7' and 18' registers. But according to the VGA settings, I should not put 182 directly, but put 182*2-1.
+
+3. 
+Place:
+	modex.h: SCROLL_Y_DIM;
+Bug Description:
+	When I move the player, he directly goes into the status bar area.
+Debuug:
+	(Actually I ask for TA's help) The key problem is that the screen which can show still contains the status bar area. If I make the part that can be showed narrower, the status bar area will be reserved.
+	So I change SCROLL_Y_DIM from 200 to 182.
+
+4.
+Place: 
+	text.c: void text2graph
+Bug Description:
+	Step1: The font printed on the screen was totally a mess
+	Step2: I can see the shape of the fonts, but it seems that they are separated into left and right parts, with a distance.
+	Step3: The font are reverse letter-wise.
+Debug:
+	Step1: I realize that I must use wrong equations to assign the bits onto status bar buffer. I forget what the original equations were. After correction, it becomes:
+	    if (k<=3){
+                        buffer[BUFFER_MEMOSIZE*p_off + BUFFER_WIDTH + j*BUFFER_WIDTH + i*2] = 0;
+                    } else {
+                        buffer[BUFFER_MEMOSIZE*p_off + BUFFER_WIDTH + j*BUFFER_WIDTH + i*2] = 0;
+	Step2: I first print the left and right parts of a single letter in different colors. With this help, I'm sure that the two parts are actually overlappped. After further verificcation of the equations, I'm add the offset.
+	    if (k<=3){
+                        buffer[BUFFER_MEMOSIZE*p_off + BUFFER_WIDTH + j*BUFFER_WIDTH + i*2 + 0] = 0;
+                    } else {
+                        buffer[BUFFER_MEMOSIZE*p_off + BUFFER_WIDTH + j*BUFFER_WIDTH + i*2 + 1] = 0;
+	Step3: For the reverse letter, I must print the left part to right, so I found I wrongly set the p_off.
+	           When I change it from p_off = (3-(k % 4)); to p_off = k % 4;.= The bug was shot.
+
+5. 
+Place:
+	modex.c: void show_screen();
+Bug Description:
+	The fonts printed on the status bar are blinking as long as the player moves.
+Debug:
+	At the time I write the code to show the status bar, I just put it into the show_screen function. But when I need to print font on it, I separate the show_status_bar part outside of the show_screen. But I did not delete the original part in show_screen.
+	When the player moves, show_screen will be called and overwrite my fonts by empty background. That's why it will "blink". The only thing I need to do is to delete the orignal show status bar part.
+
+6. 
+Place:
+	mazegame.c: static void *rtc_thread(void *arg)
+Bug Description:
+	When the player finds a fruit, but the fruit is beside a wall. When the player walks directly towards (perpendicular) the wall and eats the fruit, the fruit won't disappear.
+Debug:
+	I first thought that when I restore the image back, I will copy the one with fruit image. But when I continue to play the game, I found that as long as I can pass through the fruit, it will disappear. I find a function that can delete the eaten-fruit image, that is:  (void)unveil_around_player(play_x, play_y);
+	So I call it first before I copy the background. The fruit image is first deleted. Then it won't be copied and put back with a fruit.  
+
+
+Checkpoint 2
+
+1.
+Place:
+	module/tuxctl-ioctl.c : int tux_set_led (struct tty_struct* tty, unsigned long arg) [a self-written help function]
+Bug Description:
+	When I want to mask certain place of the LEDs, it shows "OOPS" instead of what I want.
+DeBug:
+	The problem is that after I put the bitmask, I put the bytes needed to show together and leave the room for the bytes don't need to show. In this case, the computer reads the "skipped" byte as the output, when the bitmask says there should be something. Thus it will crash and print OOPS.
+	To solve it, either ignore the masked bytes, put the shown bytes one after another; or use bitmask 0xF and display 0x00 for those bytes do not need to be shown.
+
+2. 
+Place:
+	module/tuxctl-ioctl.c : int tux_set_led (struct tty_struct* tty, unsigned long arg)
+Bug Description:
+	When I run the sudo ./mazegame, the whole game interface image is running everywhere instead of being statics in the console.
+DeBug:
+	I first try to comment each part of the new added thread codes. When I masked the time-led display part, the bug disappears. The reason is that I left a printk inside my tux_set_led function. The problem may be caused by the printing of the printk, the printed contents drive the game interface down.
+	To debug, just remove every printk.
+
+3. 
+Place:
+	input.c: main()
+Bug Description:
+	I fail to print the signal indicates that a button is pressed when I try to press the button.
+Debug:
+	The reason is that the packet is active-low but I check each cases with active high numbers (0x01, 0x02……). That's why I cannot recognize any button. After I negate the packet data, the bug is solved.
+
+4. 
+Place:
+	modex.c : void draw_floating_text(int pos_x, int pos_y, unsigned char* blk, int draw)
+Bug Description:
+	Only at the left up corner of the console can show the floating text. When the player goes outside of a unvisible boundary, the text disappears and appears again when it goes inside.
+DeBug:
+	The behavior of the text shows that my text convert function is right, the most probable bug may caused by the printing function. And I must some the boundary wrong.
+	So I check draw_floating_text:
+	There is a boundary test:
+	/* If block is completely off-screen to left/right/down, we do nothing. */
+	if (pos_text_x + FLOAT_X_DIM <= show_x || pos_text_x >= show_x + FLOAT_X_DIM || pos_text_y >= show_y + FLOAT_Y_DIM)
+		return;
+	This sentence makes any part outside of the "screen" disappear. But it is not necessary for floating text. When I delete this, the bug disappears.
+
+5. 
+Place:
+	mazegame.c : static void *rtc_thread(void *arg)
+Bug Description:
+	No matter what fruit the player eats, the floating text is always "apple"
+DeBug:
+	Since "apple" is the no.0 of the name array, so I must input 0 all the way. Also there is a swift text change, which shows that there is a process change from non-zero number to 0.
+	I continuously check fruit type:
+		fruit_type = check_for_fruit(play_x/BLOCK_X_DIM, play_y/BLOCK_Y_DIM))!=0
+	However, when player goes to places without fruit, fruit_type goes to 0. So I need to store the fruit_type when I passed by one fruit. So I add a bar of code:
+		 // store the fruit type
+               		if (fruit_type != 0) {
+                    		get_fruit = 1;
+                    		fruit_type2 = fruit_type;
+                	}
+	This piece store the fruit type until next fruit is taken.
+ 
